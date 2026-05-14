@@ -15,9 +15,9 @@ from app.plugins import _PluginBase
 
 class MediaResidueCleaner(_PluginBase):
     plugin_name = "媒体残留清理"
-    plugin_desc = "扫描 MoviePilot 历史记录中的源文件、整理目标和种子缓存，手动清理残留文件。"
+    plugin_desc = "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "0.1.0"
+    plugin_version = "0.2.0"
     plugin_author = "Codex"
     author_url = "https://github.com/jxxghp/MoviePilot-Plugins"
     plugin_config_prefix = "mediaresiduecleaner_"
@@ -26,7 +26,10 @@ class MediaResidueCleaner(_PluginBase):
 
     _enabled = False
     _scan_on_open = True
+    _scan_history = True
     _include_torrents = True
+    _source_roots = ""
+    _target_roots = ""
     _db_path = ""
     _torrent_dirs = ""
     _allowed_roots = ""
@@ -40,10 +43,13 @@ class MediaResidueCleaner(_PluginBase):
         config = config or {}
         self._enabled = bool(config.get("enabled", True))
         self._scan_on_open = bool(config.get("scan_on_open", True))
+        self._scan_history = bool(config.get("scan_history", True))
         self._include_torrents = bool(config.get("include_torrents", True))
+        self._source_roots = self._clean_text(config.get("source_roots"))
+        self._target_roots = self._clean_text(config.get("target_roots"))
         self._db_path = self._clean_text(config.get("db_path"))
         self._torrent_dirs = self._clean_text(config.get("torrent_dirs")) or self._default_torrent_dirs
-        self._allowed_roots = self._clean_text(config.get("allowed_roots")) or self._default_allowed_roots
+        self._allowed_roots = self._clean_text(config.get("allowed_roots")) or self._source_roots or self._default_allowed_roots
         self._max_items = self._safe_int(config.get("max_items"), 200, minimum=20, maximum=1000)
         self._last_error = ""
 
@@ -86,7 +92,7 @@ class MediaResidueCleaner(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -99,7 +105,7 @@ class MediaResidueCleaner(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -112,13 +118,61 @@ class MediaResidueCleaner(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "scan_history",
+                                            "label": "扫描历史记录",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "include_torrents",
                                             "label": "扫描种子缓存",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "source_roots",
+                                            "label": "源文件夹，逗号或换行分隔",
+                                            "placeholder": "/volume1/downloads\n/volume2/downloads",
+                                            "rows": 3,
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "target_roots",
+                                            "label": "目标/媒体库文件夹，逗号或换行分隔",
+                                            "placeholder": "/volume1/video\n/volume2/video",
+                                            "rows": 3,
                                         },
                                     }
                                 ],
@@ -204,7 +258,10 @@ class MediaResidueCleaner(_PluginBase):
         ], {
             "enabled": True,
             "scan_on_open": True,
+            "scan_history": True,
             "include_torrents": True,
+            "source_roots": "",
+            "target_roots": "",
             "db_path": "",
             "torrent_dirs": self._default_torrent_dirs,
             "allowed_roots": self._default_allowed_roots,
@@ -229,7 +286,8 @@ class MediaResidueCleaner(_PluginBase):
                     "variant": "tonal",
                     "text": (
                         f"扫描时间：{generated_at}；发现 {summary.get('total_items', 0)} 条记录，"
-                        f"可手动释放约 {self._format_size(summary.get('deletable_bytes', 0))}。"
+                        f"可释放候选 {summary.get('deletable_items', 0)} 条，"
+                        f"约 {self._format_size(summary.get('deletable_bytes', 0))}。"
                     ),
                 },
             },
@@ -272,93 +330,117 @@ class MediaResidueCleaner(_PluginBase):
             )
             return contents
 
-        headers = [
-            {"title": "状态", "key": "status_text", "sortable": True},
-            {"title": "大小", "key": "size_text", "sortable": True},
-            {"title": "硬链接", "key": "nlink", "sortable": True},
-            {"title": "标题", "key": "title", "sortable": True},
-            {"title": "路径", "key": "path", "sortable": False},
-            {"title": "来源", "key": "source", "sortable": True},
-        ]
-        table_items = [
-            {
-                "status_text": item.get("status_text"),
-                "size_text": item.get("size_text"),
-                "nlink": item.get("nlink") or "-",
-                "title": item.get("display_title") or "-",
-                "path": item.get("path"),
-                "source": item.get("source"),
-            }
-            for item in items[: self._max_items]
-        ]
         contents.append(
             {
-                "component": "VDataTableVirtual",
+                "component": "VAlert",
                 "props": {
-                    "headers": headers,
-                    "items": table_items,
-                    "height": "28rem",
-                    "density": "compact",
-                    "fixed-header": True,
-                    "hover": True,
-                    "class": "text-sm",
+                    "type": "warning",
+                    "variant": "tonal",
+                    "class": "my-2",
+                    "text": "只有源目录中存在、但目标目录没有对应硬链接或整理目标不存在的文件会进入可释放候选；源文件和目标都存在时不会统计为可释放。",
                 },
             }
         )
 
-        action_cards = []
-        for item in items[: min(self._max_items, 80)]:
-            if not item.get("deletable"):
-                continue
+        result_cards = []
+        for item in items[: self._max_items]:
             api_path = "delete_torrent" if item.get("kind") == "torrent" else "delete_file"
-            action_cards.append(
+            card_content = [
                 {
-                    "component": "VCard",
-                    "props": {"variant": "tonal", "class": "my-2"},
+                    "component": "VCardText",
+                    "props": {"class": "pb-2"},
                     "content": [
                         {
-                            "component": "VCardText",
-                            "props": {"class": "pb-1"},
-                            "text": f"{item.get('status_text')} | {item.get('size_text')} | {item.get('path')}",
-                        },
-                        {
-                            "component": "VCardActions",
+                            "component": "div",
+                            "props": {"class": "d-flex flex-wrap align-center ga-2 mb-2"},
                             "content": [
                                 {
-                                    "component": "VBtn",
+                                    "component": "VChip",
                                     "props": {
-                                        "prepend-icon": "mdi-delete",
-                                        "color": "error",
+                                        "color": "error" if item.get("deletable") else "default",
                                         "variant": "tonal",
+                                        "size": "small",
                                     },
-                                    "text": "删除此文件",
-                                    "events": {
-                                        "click": {
-                                            "api": f"plugin/{self.__class__.__name__}/{api_path}?apikey={settings.API_TOKEN}",
-                                            "method": "post",
-                                            "params": {"item_id": item.get("id")},
-                                        }
-                                    },
-                                }
+                                    "text": item.get("status_text"),
+                                },
+                                {
+                                    "component": "VChip",
+                                    "props": {"variant": "outlined", "size": "small"},
+                                    "text": item.get("size_text"),
+                                },
+                                {
+                                    "component": "VChip",
+                                    "props": {"variant": "outlined", "size": "small"},
+                                    "text": f"硬链接 {item.get('nlink') or '-'}",
+                                },
+                                {
+                                    "component": "VChip",
+                                    "props": {"variant": "outlined", "size": "small"},
+                                    "text": item.get("source") or "-",
+                                },
                             ],
+                        },
+                        {
+                            "component": "div",
+                            "props": {"class": "font-weight-medium mb-1"},
+                            "text": item.get("display_title") or "-",
+                        },
+                        {
+                            "component": "div",
+                            "props": {"class": "text-caption text-medium-emphasis"},
+                            "text": f"源文件：{item.get('path')}",
                         },
                     ],
                 }
-            )
-        if action_cards:
-            contents.extend(
-                [
+            ]
+            if item.get("target_path"):
+                card_content[0]["content"].append(
                     {
-                        "component": "VAlert",
-                        "props": {
-                            "type": "warning",
-                            "variant": "tonal",
-                            "class": "mt-4",
-                            "text": "下面是可删除项。点击后会立即删除对应单个文件；请先确认路径。",
-                        },
-                    },
-                    {"component": "div", "content": action_cards},
-                ]
+                        "component": "div",
+                        "props": {"class": "text-caption text-medium-emphasis mt-1"},
+                        "text": f"目标：{item.get('target_path')}",
+                    }
+                )
+            if item.get("deletable"):
+                card_content.append(
+                    {
+                        "component": "VCardActions",
+                        "content": [
+                            {
+                                "component": "VBtn",
+                                "props": {
+                                    "prepend-icon": "mdi-delete",
+                                    "color": "error",
+                                    "variant": "tonal",
+                                },
+                                "text": "删除此文件",
+                                "events": {
+                                    "click": {
+                                        "api": f"plugin/{self.__class__.__name__}/{api_path}?apikey={settings.API_TOKEN}",
+                                        "method": "post",
+                                        "params": {"item_id": item.get("id")},
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                )
+            result_cards.append(
+                {
+                    "component": "VCard",
+                    "props": {"variant": "tonal", "class": "my-2"},
+                    "content": card_content,
+                }
+            )
+        contents.append({"component": "div", "content": result_cards})
+
+        if len(items) > self._max_items:
+            contents.append(
+                {
+                    "component": "div",
+                    "props": {"class": "text-caption text-medium-emphasis mt-2"},
+                    "text": f"仅显示前 {self._max_items} 条结果，可在插件配置里调整显示数量。",
+                }
             )
 
         return contents
@@ -399,11 +481,15 @@ class MediaResidueCleaner(_PluginBase):
             return report
 
     def _scan(self) -> Dict[str, Any]:
+        self._last_error = ""
         db_path = self._resolve_db_path()
         items: List[Dict[str, Any]] = []
-        if db_path:
+        if self._source_roots and self._target_roots:
+            items.extend(self._scan_source_roots())
+
+        if self._scan_history and db_path:
             items.extend(self._scan_history_db(db_path))
-        else:
+        elif self._scan_history:
             self._last_error = "未找到 MoviePilot user.db，请在插件配置中填写路径"
 
         if self._include_torrents:
@@ -423,6 +509,56 @@ class MediaResidueCleaner(_PluginBase):
             },
             "error": self._last_error,
         }
+
+    def _scan_source_roots(self) -> List[Dict[str, Any]]:
+        source_roots = self._split_paths(self._source_roots)
+        target_roots = self._split_paths(self._target_roots)
+        target_index = self._build_target_inode_index(target_roots)
+        items: List[Dict[str, Any]] = []
+
+        for root in source_roots:
+            if not root or not os.path.isdir(root):
+                continue
+            for dirpath, _dirnames, filenames in os.walk(root):
+                for name in filenames:
+                    path = os.path.join(dirpath, name)
+                    if self._is_under_any(path, target_roots):
+                        continue
+                    try:
+                        stat = os.stat(path)
+                    except OSError:
+                        continue
+                    target_path = target_index.get(self._stat_key(stat))
+                    if target_path:
+                        status = "source_and_target_exist"
+                    else:
+                        status = "source_without_target"
+                    item = self._build_file_item(
+                        path=path,
+                        source="source_roots",
+                        title=name,
+                        row={},
+                        status=status,
+                        target_path=target_path or "",
+                    )
+                    if item:
+                        items.append(item)
+        return items
+
+    def _build_target_inode_index(self, roots: List[str]) -> Dict[Tuple[int, int], str]:
+        index: Dict[Tuple[int, int], str] = {}
+        for root in roots:
+            if not root or not os.path.isdir(root):
+                continue
+            for dirpath, _dirnames, filenames in os.walk(root):
+                for name in filenames:
+                    path = os.path.join(dirpath, name)
+                    try:
+                        stat = os.stat(path)
+                    except OSError:
+                        continue
+                    index.setdefault(self._stat_key(stat), path)
+        return index
 
     def _scan_history_db(self, db_path: str) -> List[Dict[str, Any]]:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -448,7 +584,8 @@ class MediaResidueCleaner(_PluginBase):
             title = self._display_title(data)
             src_paths = self._extract_paths(data, ["src", "files"])
             dest_paths = self._extract_paths(data, ["dest"])
-            dest_exists = any(os.path.exists(path) for path in dest_paths)
+            existing_dests = [path for path in dest_paths if os.path.exists(path)]
+            dest_exists = bool(existing_dests)
             for path in src_paths:
                 item = self._build_file_item(
                     path=path,
@@ -456,6 +593,7 @@ class MediaResidueCleaner(_PluginBase):
                     title=title,
                     row=data,
                     status="source_and_dest_exist" if dest_exists else "source_without_dest",
+                    target_path=existing_dests[0] if existing_dests else "",
                 )
                 if item:
                     items.append(item)
@@ -475,7 +613,7 @@ class MediaResidueCleaner(_PluginBase):
             if not paths:
                 paths = self._join_savepath_filepath(data)
             for path in paths:
-                item = self._build_file_item(path, "downloadfiles", title, data, "other_existing_file")
+                item = self._build_file_item(path, "downloadfiles", title, data, "history_existing_file")
                 if item:
                     items.append(item)
                 else:
@@ -492,7 +630,7 @@ class MediaResidueCleaner(_PluginBase):
             title = self._display_title(data)
             for path in self._extract_paths(data, ["path"]):
                 if os.path.isfile(path):
-                    item = self._build_file_item(path, "downloadhistory", title, data, "other_existing_file")
+                    item = self._build_file_item(path, "downloadhistory", title, data, "history_existing_file")
                     if item:
                         items.append(item)
                 elif path and not os.path.exists(path):
@@ -531,6 +669,7 @@ class MediaResidueCleaner(_PluginBase):
         row: Dict[str, Any],
         status: str,
         kind: str = "file",
+        target_path: str = "",
     ) -> Optional[Dict[str, Any]]:
         path = self._normalize_path(path)
         if not path or not os.path.isfile(path):
@@ -543,6 +682,7 @@ class MediaResidueCleaner(_PluginBase):
             "id": self._make_item_id(path, stat.st_size, stat.st_ino, kind),
             "kind": kind,
             "path": path,
+            "target_path": self._normalize_path(target_path),
             "source": source,
             "status": status,
             "status_text": self._status_text(status),
@@ -553,7 +693,7 @@ class MediaResidueCleaner(_PluginBase):
             "nlink": int(getattr(stat, "st_nlink", 1)),
             "inode": int(getattr(stat, "st_ino", 0)),
             "mtime": int(getattr(stat, "st_mtime", 0)),
-            "deletable": self._is_allowed_delete_path(path),
+            "deletable": self._is_status_deletable(status) and self._is_allowed_delete_path(path),
         }
         return item
 
@@ -729,6 +869,34 @@ class MediaResidueCleaner(_PluginBase):
         parts = re.split(r"[\n,;]+", text or "")
         return [self._normalize_path(part) for part in parts if self._normalize_path(part)]
 
+    @staticmethod
+    def _stat_key(stat: os.stat_result) -> Tuple[int, int]:
+        return int(getattr(stat, "st_dev", 0)), int(getattr(stat, "st_ino", 0))
+
+    def _is_under_any(self, path: str, roots: List[str]) -> bool:
+        path = self._normalize_path(path)
+        if not path:
+            return False
+        for root in roots:
+            root = self._normalize_path(root)
+            if not root:
+                continue
+            try:
+                common = os.path.commonpath([path, root])
+            except ValueError:
+                continue
+            if common == root:
+                return True
+        return False
+
+    @staticmethod
+    def _is_status_deletable(status: str) -> bool:
+        return status in {
+            "source_without_target",
+            "source_without_dest",
+            "torrent_cache",
+        }
+
     def _is_allowed_delete_path(self, path: str) -> bool:
         path = self._normalize_path(path)
         if not path or path == "/":
@@ -746,10 +914,12 @@ class MediaResidueCleaner(_PluginBase):
     def _dedupe_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         by_key: Dict[Tuple[str, int, int, str], Dict[str, Any]] = {}
         priority = {
-            "source_without_dest": 50,
+            "source_without_target": 70,
+            "source_without_dest": 60,
+            "source_and_target_exist": 50,
             "source_and_dest_exist": 40,
             "torrent_cache": 30,
-            "other_existing_file": 20,
+            "history_existing_file": 20,
             "record_missing_file": 10,
         }
         for item in items:
@@ -769,9 +939,11 @@ class MediaResidueCleaner(_PluginBase):
         mapping = {
             "source_without_dest": "源文件存在，整理目标不存在",
             "source_and_dest_exist": "源文件和整理目标都存在",
+            "source_without_target": "目标目录未找到对应硬链接",
+            "source_and_target_exist": "源文件和目标硬链接都存在",
             "record_missing_file": "只有历史记录，文件不存在",
             "torrent_cache": "种子缓存",
-            "other_existing_file": "历史记录中的现存文件",
+            "history_existing_file": "历史记录中的现存文件",
         }
         return mapping.get(status, status)
 

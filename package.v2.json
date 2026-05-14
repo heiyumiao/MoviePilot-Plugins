@@ -1,13 +1,14 @@
 {
   "MediaResidueCleaner": {
     "name": "媒体残留清理",
-    "description": "扫描 MoviePilot 历史记录中的源文件、整理目标和种子缓存，手动清理残留文件。",
+    "description": "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。",
     "labels": "清理,媒体库,硬链接,MoviePilot",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "icon": "Moviepilot_A.png",
     "author": "Codex",
     "level": 1,
     "history": {
+      "0.2.0": "增加源文件夹和目标媒体库文件夹配置，使用硬链接 inode 核对残留；优化详情页长路径展示，并避免把源文件和目标都存在的记录统计为可释放。",
       "0.1.0": "首个测试版本，支持扫描源下载残留、整理目标缺失记录和种子缓存，并手动删除单个扫描结果文件。"
     }
   }
