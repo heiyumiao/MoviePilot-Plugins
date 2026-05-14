@@ -1,4 +1,16 @@
 {
+  "HeiyuMediaSyncDelete": {
+    "name": "媒体文件同步删除",
+    "description": "监控媒体库删除事件，按硬链接关系同步清理源文件、刮削文件、转移记录和下载任务，并提供清晰历史记录。",
+    "labels": "媒体库,硬链接,同步删除,Jellyfin,MoviePilot",
+    "version": "0.1.0",
+    "icon": "Ombi_A.png",
+    "author": "heiyu",
+    "level": 1,
+    "history": {
+      "0.1.0": "基于清理媒体文件 2.12 定制，使用独立插件 ID，增加类似媒体文件同步删除的详情页历史卡片。"
+    }
+  },
   "MediaResidueCleaner": {
     "name": "媒体残留清理",
     "description": "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。",
