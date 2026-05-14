@@ -17,7 +17,7 @@ class MediaResidueCleaner(_PluginBase):
     plugin_name = "媒体残留清理"
     plugin_desc = "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "0.2.3"
+    plugin_version = "0.2.4"
     plugin_author = "heiyu"
     author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     plugin_config_prefix = "mediaresiduecleaner_"
@@ -41,7 +41,7 @@ class MediaResidueCleaner(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         config = config or {}
-        self._enabled = bool(config.get("enabled", True))
+        self._enabled = bool(config.get("enabled", False))
         self._scan_on_open = bool(config.get("scan_on_open", True))
         self._scan_history = bool(config.get("scan_history", True))
         self._include_torrents = bool(config.get("include_torrents", True))
@@ -248,15 +248,15 @@ class MediaResidueCleaner(_PluginBase):
                     {
                         "component": "VAlert",
                         "props": {
-                            "type": "warning",
+                            "type": "info",
                             "variant": "tonal",
-                            "text": "删除按钮只会删除扫描结果中的单个文件，并校验路径、大小和 inode；不会自动清理 MoviePilot 数据库历史记录。",
+                            "text": "默认安装后不启用。建议先填好源文件夹和目标媒体库文件夹，再打开插件或手动扫描；删除前会校验路径、大小和 inode。",
                         },
                     },
                 ],
             }
         ], {
-            "enabled": True,
+            "enabled": False,
             "scan_on_open": True,
             "scan_history": True,
             "include_torrents": True,
@@ -277,19 +277,42 @@ class MediaResidueCleaner(_PluginBase):
         summary = report.get("summary") or {}
         generated_at = report.get("generated_at") or "-"
         error = report.get("error") or self._last_error
+        deletable_items = int(summary.get("deletable_items") or 0)
+        total_items = int(summary.get("total_items") or 0)
+        deletable_bytes = int(summary.get("deletable_bytes") or 0)
 
         contents: List[dict] = [
             {
                 "component": "VAlert",
                 "props": {
-                    "type": "info",
+                    "type": "warning" if deletable_items else "success",
                     "variant": "tonal",
                     "text": (
-                        f"扫描时间：{generated_at}；发现 {summary.get('total_items', 0)} 条记录，"
-                        f"可释放候选 {summary.get('deletable_items', 0)} 条，"
-                        f"约 {self._format_size(summary.get('deletable_bytes', 0))}。"
+                        f"扫描时间：{generated_at}；发现 {total_items} 条记录，"
+                        f"可释放候选 {deletable_items} 条，约 {self._format_size(deletable_bytes)}。"
                     ),
                 },
+            },
+            {
+                "component": "div",
+                "props": {"class": "d-flex flex-wrap ga-2 my-2"},
+                "content": [
+                    {
+                        "component": "VChip",
+                        "props": {"color": "error", "variant": "tonal"},
+                        "text": f"可释放 {deletable_items} 条",
+                    },
+                    {
+                        "component": "VChip",
+                        "props": {"color": "warning", "variant": "tonal"},
+                        "text": f"预计 {self._format_size(deletable_bytes)}",
+                    },
+                    {
+                        "component": "VChip",
+                        "props": {"variant": "outlined"},
+                        "text": f"总记录 {total_items} 条",
+                    },
+                ],
             },
             {
                 "component": "VBtn",
@@ -330,21 +353,36 @@ class MediaResidueCleaner(_PluginBase):
             )
             return contents
 
+        candidate_items = [item for item in items if item.get("deletable")]
+        reference_items = [item for item in items if not item.get("deletable")]
         contents.append(
             {
                 "component": "VAlert",
                 "props": {
-                    "type": "warning",
+                    "type": "info",
                     "variant": "tonal",
                     "class": "my-2",
-                    "text": "只有源目录中存在、但目标目录没有对应硬链接或整理目标不存在的文件会进入可释放候选；源文件和目标都存在时不会统计为可释放。",
+                    "text": "硬链接只按设备号和 inode 判断。目标存在但当前源文件 inode 不同，会作为额外副本计入可释放候选；源文件和目标 inode 相同则只作为参考记录展示。",
                 },
             }
         )
 
         result_cards = []
-        for item in items[: self._max_items]:
+        ordered_items = (candidate_items + reference_items)[: self._max_items]
+        current_group = ""
+        for item in ordered_items:
+            group = "可释放候选" if item.get("deletable") else "参考记录"
+            if group != current_group:
+                current_group = group
+                result_cards.append(
+                    {
+                        "component": "div",
+                        "props": {"class": "text-subtitle-2 font-weight-bold mt-4 mb-2"},
+                        "text": group,
+                    }
+                )
             api_path = "delete_torrent" if item.get("kind") == "torrent" else "delete_file"
+            status_color = self._status_color(item.get("status"), bool(item.get("deletable")))
             card_content = [
                 {
                     "component": "VCardText",
@@ -357,7 +395,7 @@ class MediaResidueCleaner(_PluginBase):
                                 {
                                     "component": "VChip",
                                     "props": {
-                                        "color": "error" if item.get("deletable") else "default",
+                                        "color": status_color,
                                         "variant": "tonal",
                                         "size": "small",
                                     },
@@ -425,10 +463,13 @@ class MediaResidueCleaner(_PluginBase):
                         ],
                     }
                 )
+            card_props = {"variant": "tonal", "class": "my-2"}
+            if item.get("deletable"):
+                card_props["color"] = "error"
             result_cards.append(
                 {
                     "component": "VCard",
-                    "props": {"variant": "tonal", "class": "my-2"},
+                    "props": card_props,
                     "content": card_content,
                 }
             )
@@ -992,6 +1033,18 @@ class MediaResidueCleaner(_PluginBase):
             "history_existing_file": "历史记录中的现存文件",
         }
         return mapping.get(status, status)
+
+    @staticmethod
+    def _status_color(status: str, deletable: bool = False) -> str:
+        if deletable:
+            return "error"
+        mapping = {
+            "source_and_target_exist": "success",
+            "source_and_dest_exist": "success",
+            "history_existing_file": "info",
+            "record_missing_file": "default",
+        }
+        return mapping.get(status, "warning")
 
     @staticmethod
     def _format_size(size: Any) -> str:
