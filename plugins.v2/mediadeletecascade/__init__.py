@@ -202,7 +202,7 @@ def updateState(monitor_dirs: List[str]):
     return file_state
 
 
-class HeiyuMediaDeleteSync(_PluginBase):
+class MediaDeleteCascade(_PluginBase):
     # 插件名称
     plugin_name = "媒体删除联动清理"
     # 插件描述
@@ -216,7 +216,7 @@ class HeiyuMediaDeleteSync(_PluginBase):
     # 作者主页
     author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     # 插件配置项ID前缀
-    plugin_config_prefix = "heiyumediadeletesync_"
+    plugin_config_prefix = "mediadeletecascade_"
     # 加载顺序
     plugin_order = 0
     # 可使用的用户级别
