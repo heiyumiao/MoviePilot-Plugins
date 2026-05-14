@@ -1,4 +1,4 @@
-import os
+﻿import os
 import platform
 import copy
 import shutil
@@ -202,9 +202,9 @@ def updateState(monitor_dirs: List[str]):
     return file_state
 
 
-class HeiyuMediaSyncDelete(_PluginBase):
+class HeiyuMediaDeleteSync(_PluginBase):
     # 插件名称
-    plugin_name = "媒体文件同步删除"
+    plugin_name = "媒体删除联动清理"
     # 插件描述
     plugin_desc = "监控媒体库删除事件，同步清理硬链接源文件、刮削文件、转移记录和下载任务，并提供清晰历史记录。"
     # 插件图标
@@ -216,7 +216,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
     # 作者主页
     author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     # 插件配置项ID前缀
-    plugin_config_prefix = "heiyumediasyncdelete_"
+    plugin_config_prefix = "heiyumediadeletesync_"
     # 加载顺序
     plugin_order = 0
     # 可使用的用户级别
@@ -308,7 +308,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
         return PollingObserver()
 
     def init_plugin(self, config: dict = None):
-        logger.info("初始化媒体文件同步删除插件")
+        logger.info("初始化媒体删除联动清理插件")
         self._transferhistory = TransferHistoryOper()
         self._storagechain = StorageChain()
 
@@ -403,7 +403,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
                         logger.error(f"{mon_path} 启动硬链接监控失败：{err_msg}")
                     self.systemmessage.put(
                         f"{mon_path} 启动硬链接监控失败：{err_msg}",
-                        title="媒体文件同步删除",
+                        title="媒体删除联动清理",
                     )
 
             # 启动 STRM 监控
@@ -438,7 +438,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
                         logger.error(f"{mon_path} 启动 STRM 监控失败：{err_msg}")
                     self.systemmessage.put(
                         f"{mon_path} 启动 STRM 监控失败：{err_msg}",
-                        title="媒体文件同步删除",
+                        title="媒体删除联动清理",
                     )
 
             # 合并所有监控目录用于文件状态更新
@@ -490,7 +490,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "title": "媒体文件同步删除",
+                                            "title": "媒体删除联动清理",
                                             "text": "监控媒体库文件删除，按硬链接关系同步清理源文件，并记录清晰的处理历史；可选清理刮削文件、转移记录和联动下载任务。",
                                         },
                                     }
@@ -1422,7 +1422,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
 
                 self.post_message(
                     mtype=NotificationType.SiteMessage,
-                    title="媒体文件同步删除",
+                    title="媒体删除联动清理",
                     text=f"⏰ 延迟删除完成\n\n" + "\n".join(notification_parts),
                 )
             self._append_sync_history(
@@ -1628,7 +1628,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
 
                         self.post_message(
                             mtype=NotificationType.SiteMessage,
-                            title="媒体文件同步删除",
+                            title="媒体删除联动清理",
                             text=f"⚡ 立即删除完成\n\n" + "\n".join(notification_parts),
                         )
                     self._append_sync_history(
@@ -2123,7 +2123,7 @@ class HeiyuMediaSyncDelete(_PluginBase):
 
                     self.post_message(
                         mtype=NotificationType.SiteMessage,
-                        title="媒体文件同步删除",
+                        title="媒体删除联动清理",
                         text=f"✅ 清理完成\n\n" + "\n".join(notification_parts),
                     )
             else:

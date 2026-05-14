@@ -1,6 +1,6 @@
 {
-  "HeiyuMediaSyncDelete": {
-    "name": "媒体文件同步删除",
+  "HeiyuMediaDeleteSync": {
+    "name": "媒体删除联动清理",
     "description": "监控媒体库删除事件，按硬链接关系同步清理源文件、刮削文件、转移记录和下载任务，并提供清晰历史记录。",
     "labels": "媒体库,硬链接,同步删除,Jellyfin,MoviePilot",
     "version": "0.1.0",

@@ -27,14 +27,14 @@ https://github.com/heiyumiao/MoviePilot-Plugins
 plugins.v2/mediaresiduecleaner
 ```
 
-### HeiyuMediaSyncDelete / 媒体文件同步删除
+### HeiyuMediaDeleteSync / 媒体删除联动清理
 
 基于 `RemoveLink / 清理媒体文件` 的个人定制版，使用独立插件 ID。用于监控 Jellyfin/媒体库删除文件后，按硬链接关系同步清理源文件，并在详情页保留清晰的同步删除历史。
 
 插件目录：
 
 ```text
-plugins.v2/heiyumediasyncdelete
+plugins.v2/heiyumediadeletesync
 ```
 
 ## 使用方式

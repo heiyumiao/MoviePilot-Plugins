@@ -1,6 +1,6 @@
-# 媒体文件同步删除
+# 媒体删除联动清理
 
-基于 `RemoveLink / 清理媒体文件` 2.12 的个人定制版，使用独立插件 ID：`HeiyuMediaSyncDelete`。
+基于 `RemoveLink / 清理媒体文件` 2.12 的个人定制版，使用独立插件 ID：`HeiyuMediaDeleteSync`。
 
 ## 功能
 
