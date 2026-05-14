@@ -17,7 +17,7 @@ class MediaResidueCleaner(_PluginBase):
     plugin_name = "媒体残留清理"
     plugin_desc = "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "0.2.4"
+    plugin_version = "0.2.5"
     plugin_author = "heiyu"
     author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     plugin_config_prefix = "mediaresiduecleaner_"
@@ -28,6 +28,9 @@ class MediaResidueCleaner(_PluginBase):
     _scan_on_open = True
     _scan_history = True
     _include_torrents = True
+    _sync_downloader_tasks = False
+    _downloader_action = "pause"
+    _sync_related_seeds = True
     _source_roots = ""
     _target_roots = ""
     _db_path = ""
@@ -45,6 +48,11 @@ class MediaResidueCleaner(_PluginBase):
         self._scan_on_open = bool(config.get("scan_on_open", True))
         self._scan_history = bool(config.get("scan_history", True))
         self._include_torrents = bool(config.get("include_torrents", True))
+        self._sync_downloader_tasks = bool(config.get("sync_downloader_tasks", False))
+        self._downloader_action = self._clean_text(config.get("downloader_action")) or "pause"
+        if self._downloader_action not in {"pause", "delete"}:
+            self._downloader_action = "pause"
+        self._sync_related_seeds = bool(config.get("sync_related_seeds", True))
         self._source_roots = self._clean_text(config.get("source_roots"))
         self._target_roots = self._clean_text(config.get("target_roots"))
         self._db_path = self._clean_text(config.get("db_path"))
@@ -92,7 +100,7 @@ class MediaResidueCleaner(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -105,7 +113,7 @@ class MediaResidueCleaner(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -118,7 +126,7 @@ class MediaResidueCleaner(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -129,15 +137,68 @@ class MediaResidueCleaner(_PluginBase):
                                     }
                                 ],
                             },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "include_torrents",
                                             "label": "扫描种子缓存",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "sync_downloader_tasks",
+                                            "label": "联动处理下载任务",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "sync_related_seeds",
+                                            "label": "处理辅种记录",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "downloader_action",
+                                            "label": "下载任务动作",
+                                            "items": [
+                                                {"title": "暂停任务", "value": "pause"},
+                                                {"title": "删除任务（不删除下载器文件）", "value": "delete"},
+                                            ],
                                         },
                                     }
                                 ],
@@ -250,7 +311,7 @@ class MediaResidueCleaner(_PluginBase):
                         "props": {
                             "type": "info",
                             "variant": "tonal",
-                            "text": "默认安装后不启用。建议先填好源文件夹和目标媒体库文件夹，再打开插件或手动扫描；删除前会校验路径、大小和 inode。",
+                            "text": "默认安装后不启用。建议先填好源文件夹和目标媒体库文件夹，再打开插件或手动扫描；删除前会校验路径、大小和 inode。联动处理下载任务会影响下载器里的做种任务，请确认后再开启。",
                         },
                     },
                 ],
@@ -260,6 +321,9 @@ class MediaResidueCleaner(_PluginBase):
             "scan_on_open": True,
             "scan_history": True,
             "include_torrents": True,
+            "sync_downloader_tasks": False,
+            "downloader_action": "pause",
+            "sync_related_seeds": True,
             "source_roots": "",
             "target_roots": "",
             "db_path": "",
@@ -842,8 +906,139 @@ class MediaResidueCleaner(_PluginBase):
         except OSError as exc:
             return schemas.Response(success=False, message=f"删除失败：{exc}")
 
+        task_message = ""
+        if expected_kind == "file" and self._sync_downloader_tasks:
+            task_message = self._sync_download_tasks(path)
+
         self._scan_and_save()
-        return schemas.Response(success=True, message=f"已删除：{path}")
+        message = f"已删除：{path}"
+        if task_message:
+            message = f"{message}；{task_message}"
+        return schemas.Response(success=True, message=message)
+
+    def _sync_download_tasks(self, path: str) -> str:
+        records = self._find_download_records(path)
+        if not records:
+            return "未找到对应下载任务"
+
+        handled: List[str] = []
+        errors: List[str] = []
+        for record in records:
+            download_hash = self._clean_text(record.get("download_hash"))
+            downloader = self._clean_text(record.get("downloader"))
+            if not download_hash or download_hash in handled:
+                continue
+            ok, message = self._handle_torrent_task(download_hash, downloader)
+            if ok:
+                handled.append(download_hash)
+                if self._sync_related_seeds:
+                    handled.extend(self._handle_related_seed_tasks(download_hash, handled))
+            else:
+                errors.append(message)
+
+        if handled and not errors:
+            action_text = "已暂停" if self._downloader_action == "pause" else "已删除"
+            return f"下载任务{action_text} {len(set(handled))} 个"
+        if handled and errors:
+            return f"下载任务已处理 {len(set(handled))} 个，失败 {len(errors)} 个"
+        return "下载任务处理失败：" + "；".join(errors[:3])
+
+    def _find_download_records(self, path: str) -> List[Dict[str, str]]:
+        db_path = self._resolve_db_path()
+        if not db_path:
+            return []
+        path = self._normalize_path(path)
+        records: List[Dict[str, str]] = []
+        try:
+            con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            con.row_factory = sqlite3.Row
+        except sqlite3.Error:
+            return records
+        try:
+            if "downloadfiles" not in set(self._sqlite_tables(con)):
+                return records
+            rows = self._fetch_rows(con, "downloadfiles")
+            for row in rows:
+                data = dict(row)
+                candidates = self._extract_paths(data, ["fullpath"])
+                if not candidates:
+                    candidates = self._join_savepath_filepath(data)
+                if path not in candidates:
+                    continue
+                records.append(
+                    {
+                        "download_hash": self._clean_text(data.get("download_hash")),
+                        "downloader": self._clean_text(data.get("downloader")),
+                    }
+                )
+            return self._unique_download_records(records)
+        finally:
+            con.close()
+
+    @staticmethod
+    def _unique_download_records(records: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        seen = set()
+        unique = []
+        for record in records:
+            key = (record.get("download_hash") or "", record.get("downloader") or "")
+            if not key[0] or key in seen:
+                continue
+            seen.add(key)
+            unique.append(record)
+        return unique
+
+    def _handle_torrent_task(self, download_hash: str, downloader: str = "") -> Tuple[bool, str]:
+        chain = getattr(self, "chain", None)
+        if not chain:
+            return False, "当前 MoviePilot 环境未提供下载链"
+        try:
+            if self._downloader_action == "delete":
+                self._call_chain_torrent_method(chain, "remove_torrents", download_hash, downloader)
+            else:
+                self._call_chain_torrent_method(chain, "stop_torrents", download_hash, downloader)
+            logger.info(f"媒体残留清理联动处理下载任务：{self._downloader_action} {downloader or '-'} {download_hash}")
+            return True, download_hash
+        except Exception as exc:
+            logger.error(f"媒体残留清理处理下载任务失败：{downloader or '-'} {download_hash} {exc}")
+            return False, f"{download_hash}: {exc}"
+
+    @staticmethod
+    def _call_chain_torrent_method(chain: Any, method_name: str, download_hash: str, downloader: str = ""):
+        method = getattr(chain, method_name)
+        if downloader:
+            try:
+                return method(hashs=download_hash, downloader=downloader)
+            except TypeError:
+                return method(download_hash)
+        try:
+            return method(hashs=download_hash)
+        except TypeError:
+            return method(download_hash)
+
+    def _handle_related_seed_tasks(self, download_hash: str, handled: List[str]) -> List[str]:
+        seed_history = self.get_data(key=download_hash, plugin_id="IYUUAutoSeed") or []
+        if not seed_history or not isinstance(seed_history, list):
+            return []
+        related: List[str] = []
+        for history in seed_history:
+            downloader = self._clean_text(history.get("downloader"))
+            torrents = history.get("torrents") or []
+            if not isinstance(torrents, list):
+                torrents = [torrents]
+            for torrent_hash in torrents:
+                torrent_hash = self._clean_text(torrent_hash)
+                if not torrent_hash or torrent_hash in handled or torrent_hash in related:
+                    continue
+                ok, _message = self._handle_torrent_task(torrent_hash, downloader)
+                if ok:
+                    related.append(torrent_hash)
+                    related.extend(self._handle_related_seed_tasks(torrent_hash, handled + related))
+        if self._downloader_action == "delete" and related:
+            try:
+                self.del_data(key=download_hash, plugin_id="IYUUAutoSeed")
+            except Exception:
+                pass
+        return related
 
     def _resolve_db_path(self) -> str:
         candidates = []
