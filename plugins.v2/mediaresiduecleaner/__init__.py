@@ -17,7 +17,7 @@ class MediaResidueCleaner(_PluginBase):
     plugin_name = "媒体残留清理"
     plugin_desc = "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "0.2.1"
+    plugin_version = "0.2.2"
     plugin_author = "heiyu"
     author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     plugin_config_prefix = "mediaresiduecleaner_"
@@ -484,8 +484,9 @@ class MediaResidueCleaner(_PluginBase):
         self._last_error = ""
         db_path = self._resolve_db_path()
         items: List[Dict[str, Any]] = []
+        transfer_protections = self._build_transfer_protections(db_path) if self._scan_history and db_path else {}
         if self._source_roots and self._target_roots:
-            items.extend(self._scan_source_roots())
+            items.extend(self._scan_source_roots(transfer_protections))
 
         if self._scan_history and db_path:
             items.extend(self._scan_history_db(db_path))
@@ -510,7 +511,7 @@ class MediaResidueCleaner(_PluginBase):
             "error": self._last_error,
         }
 
-    def _scan_source_roots(self) -> List[Dict[str, Any]]:
+    def _scan_source_roots(self, transfer_protections: Dict[Tuple[str, int], Dict[str, str]]) -> List[Dict[str, Any]]:
         source_roots = self._split_paths(self._source_roots)
         target_roots = self._split_paths(self._target_roots)
         target_index = self._build_target_inode_index(target_roots)
@@ -536,12 +537,16 @@ class MediaResidueCleaner(_PluginBase):
                     target_path = target_index.get(self._stat_key(stat))
                     if target_path:
                         status = "source_and_target_exist"
+                    elif (name, int(stat.st_size)) in transfer_protections:
+                        protected = transfer_protections[(name, int(stat.st_size))]
+                        target_path = protected.get("target_path")
+                        status = "source_and_dest_exist"
                     else:
                         status = "source_without_target"
                     item = self._build_file_item(
                         path=path,
                         source="source_roots",
-                        title=name,
+                        title=transfer_protections.get((name, int(stat.st_size)), {}).get("title") or name,
                         row={},
                         status=status,
                         target_path=target_path or "",
@@ -564,6 +569,39 @@ class MediaResidueCleaner(_PluginBase):
                         continue
                     index.setdefault(self._stat_key(stat), path)
         return index
+
+    def _build_transfer_protections(self, db_path: str) -> Dict[Tuple[str, int], Dict[str, str]]:
+        protections: Dict[Tuple[str, int], Dict[str, str]] = {}
+        try:
+            con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            con.row_factory = sqlite3.Row
+        except sqlite3.Error:
+            return protections
+        try:
+            if "transferhistory" not in set(self._sqlite_tables(con)):
+                return protections
+            for row in self._fetch_rows(con, "transferhistory"):
+                data = dict(row)
+                title = self._display_title(data)
+                src_paths = self._extract_paths(data, ["src", "files"])
+                dest_paths = self._extract_paths(data, ["dest"])
+                for dest in dest_paths:
+                    if not dest or not os.path.isfile(dest):
+                        continue
+                    try:
+                        dest_size = int(os.stat(dest).st_size)
+                    except OSError:
+                        continue
+                    for src in src_paths:
+                        name = os.path.basename(self._normalize_path(src))
+                        if name:
+                            protections.setdefault(
+                                (name, dest_size),
+                                {"target_path": dest, "title": title},
+                            )
+            return protections
+        finally:
+            con.close()
 
     def _scan_history_db(self, db_path: str) -> List[Dict[str, Any]]:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
