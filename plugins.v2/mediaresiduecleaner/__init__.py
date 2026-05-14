@@ -17,7 +17,7 @@ class MediaResidueCleaner(_PluginBase):
     plugin_name = "媒体残留清理"
     plugin_desc = "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "0.2.2"
+    plugin_version = "0.2.3"
     plugin_author = "heiyu"
     author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     plugin_config_prefix = "mediaresiduecleaner_"
@@ -540,7 +540,7 @@ class MediaResidueCleaner(_PluginBase):
                     elif (name, int(stat.st_size)) in transfer_protections:
                         protected = transfer_protections[(name, int(stat.st_size))]
                         target_path = protected.get("target_path")
-                        status = "source_and_dest_exist"
+                        status = "target_exists_but_source_not_linked"
                     else:
                         status = "source_without_target"
                     item = self._build_file_item(
@@ -936,6 +936,7 @@ class MediaResidueCleaner(_PluginBase):
     def _is_status_deletable(status: str) -> bool:
         return status in {
             "source_without_target",
+            "target_exists_but_source_not_linked",
             "source_without_dest",
             "torrent_cache",
         }
@@ -959,6 +960,7 @@ class MediaResidueCleaner(_PluginBase):
         priority = {
             "source_and_target_exist": 90,
             "source_and_dest_exist": 80,
+            "target_exists_but_source_not_linked": 75,
             "source_without_target": 70,
             "source_without_dest": 60,
             "torrent_cache": 30,
@@ -984,6 +986,7 @@ class MediaResidueCleaner(_PluginBase):
             "source_and_dest_exist": "源文件和整理目标都存在",
             "source_without_target": "目标目录未找到对应硬链接",
             "source_and_target_exist": "源文件和目标硬链接都存在",
+            "target_exists_but_source_not_linked": "目标存在，但当前源文件不是硬链接",
             "record_missing_file": "只有历史记录，文件不存在",
             "torrent_cache": "种子缓存",
             "history_existing_file": "历史记录中的现存文件",
