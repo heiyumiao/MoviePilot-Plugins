@@ -17,9 +17,9 @@ class MediaResidueCleaner(_PluginBase):
     plugin_name = "媒体残留清理"
     plugin_desc = "按源目录和媒体库目录核对硬链接，辅助清理整理后的下载残留。"
     plugin_icon = "Moviepilot_A.png"
-    plugin_version = "0.2.0"
-    plugin_author = "Codex"
-    author_url = "https://github.com/jxxghp/MoviePilot-Plugins"
+    plugin_version = "0.2.1"
+    plugin_author = "heiyu"
+    author_url = "https://github.com/heiyumiao/MoviePilot-Plugins"
     plugin_config_prefix = "mediaresiduecleaner_"
     plugin_order = 88
     auth_level = 1
@@ -919,10 +919,10 @@ class MediaResidueCleaner(_PluginBase):
     def _dedupe_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         by_key: Dict[Tuple[str, int, int, str], Dict[str, Any]] = {}
         priority = {
+            "source_and_target_exist": 90,
+            "source_and_dest_exist": 80,
             "source_without_target": 70,
             "source_without_dest": 60,
-            "source_and_target_exist": 50,
-            "source_and_dest_exist": 40,
             "torrent_cache": 30,
             "history_existing_file": 20,
             "record_missing_file": 10,
