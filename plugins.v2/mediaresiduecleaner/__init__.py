@@ -519,7 +519,12 @@ class MediaResidueCleaner(_PluginBase):
         for root in source_roots:
             if not root or not os.path.isdir(root):
                 continue
-            for dirpath, _dirnames, filenames in os.walk(root):
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [
+                    name
+                    for name in dirnames
+                    if not self._is_under_any(os.path.join(dirpath, name), target_roots)
+                ]
                 for name in filenames:
                     path = os.path.join(dirpath, name)
                     if self._is_under_any(path, target_roots):
